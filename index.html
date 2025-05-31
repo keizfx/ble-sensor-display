@@ -192,12 +192,17 @@
 
         // グラフ関連の変数
         const CHART_DURATION_SECONDS = 20; // グラフの表示期間（秒）
-        const REMOVE_OLD_DATA_INTERVAL_MS = 1000; // 古いデータをチェックし削除する間隔（ミリ秒）
-        
+        // データ取得が頻繁でない場合でも、古いデータを確実に削除するためのタイマー
+        const CLEANUP_INTERVAL_MS = 1000; // 1秒ごとに古いデータをチェックして削除
+
         let temperatureData = []; // データ形式: { x: timestamp(ms), y: value }
         let pressureData = [];    // データ形式: { x: timestamp(ms), y: value }
         let sensorChart; // Chart.jsインスタンス
-        
+
+        // 最新の油温・油圧を保持する変数 (グラフ更新時に両方の値が必要なため)
+        let latestTemperature = null;
+        let latestPressure = null;
+
         // Chart.jsの初期化
         document.addEventListener('DOMContentLoaded', () => {
             const ctx = document.getElementById('sensorChart').getContext('2d');
@@ -235,11 +240,11 @@
                     },
                     scales: {
                         x: {
-                            type: 'time', // ★変更点★ 時間軸に設定
+                            type: 'time', // 時間軸に設定
                             time: {
                                 unit: 'second', // 秒単位
                                 displayFormats: {
-                                    second: 'mm:ss' // 例: 00:00, 00:01
+                                    second: 'HH:mm:ss' // 例: 00:00:00 (時間表示を明確に)
                                 },
                                 tooltipFormat: 'yyyy/MM/dd HH:mm:ss' // ツールチップの表示形式
                             },
@@ -251,19 +256,17 @@
                             ticks: {
                                 color: '#ff0000',
                                 callback: function(value, index, ticks) {
-                                    // ★変更点★ X軸の表示を-20sから0sに固定
                                     // 最新のタイムスタンプとの差を計算して表示
-                                    if (temperatureData.length === 0 && pressureData.length === 0) return '';
-                                    const now = new Date().getTime();
-                                    const diffSeconds = Math.round((value - now) / 1000);
-                                    // 0s は現在時刻、-1s は1秒前
+                                    // 常に最新のデータが0sの位置、20秒前が-20sの位置になるようにする
+                                    const nowMs = new Date().getTime(); // 現在のタイムスタンプ
+                                    const diffSeconds = Math.round((value - nowMs) / 1000); // 描画しているティックのタイムスタンプと現在時刻との差
                                     return diffSeconds + 's';
                                 }
                             },
                             grid: {
                                 color: 'rgba(255, 0, 0, 0.2)'
                             },
-                            // minとmaxはupdateChartで動的に設定するためここでは指定しない
+                            // minとmaxはupdateChartDataで動的に設定するためここでは指定しない
                         },
                         yTemp: { // 油温用のY軸
                             position: 'left', // 左側に表示
@@ -308,6 +311,9 @@
                 }
             });
             document.getElementById('connectButton').onclick = connectDevice;
+
+            // 定期的に古いデータを削除し、グラフのX軸を更新するタイマーを開始
+            setInterval(updateChartRangeAndCleanup, CLEANUP_INTERVAL_MS);
         });
 
 
@@ -360,6 +366,8 @@
             // グラフデータをリセット
             temperatureData = [];
             pressureData = [];
+            latestTemperature = null;
+            latestPressure = null;
             sensorChart.update();
         }
 
@@ -367,18 +375,18 @@
             const value = event.target.value;
             const temperature = value.getFloat32(0, true);
             document.getElementById('tempValue').textContent = temperature.toFixed(2);
-            // 現在のタイムスタンプを取得
-            const now = new Date().getTime();
-            updateChartData(now, temperature, pressureData.length > 0 ? pressureData[pressureData.length - 1].y : NaN);
+            latestTemperature = temperature; // 最新の温度を更新
+            // データが揃っていればグラフを更新。揃っていなくても、latestPressureがnullならそちらのデータは追加されない
+            updateChartData(new Date().getTime(), latestTemperature, latestPressure);
         }
 
         function handlePressureNotifications(event) {
             const value = event.target.value;
             const pressure = value.getFloat32(0, true);
             updateMeter(pressure, PRESS_MIN_VALUE, PRESS_MAX_VALUE, 'pressNeedle', 'pressValue');
-            // 現在のタイムスタンプを取得
-            const now = new Date().getTime();
-            updateChartData(now, temperatureData.length > 0 ? temperatureData[temperatureData.length - 1].y : NaN, pressure);
+            latestPressure = pressure; // 最新の油圧を更新
+            // データが揃っていればグラフを更新。揃っていなくても、latestTemperatureがnullならそちらのデータは追加されない
+            updateChartData(new Date().getTime(), latestTemperature, latestPressure);
         }
 
         function updateMeter(value, minValue, maxValue, needleId, valueId) {
@@ -393,32 +401,38 @@
 
         // グラフデータ更新関数
         function updateChartData(timestamp, temp, press) {
-            // 新しいデータを追加
-            // NaN (Not a Number) はプロットされないので、初期値やデータがない場合はNaNを渡す
-            if (!isNaN(temp)) {
-                temperatureData.push({ x: timestamp, y: temp });
-            }
-            if (!isNaN(press)) {
-                pressureData.push({ x: timestamp, y: press });
-            }
+            // 受信したデータのみを新しいタイムスタンプで追加
+            // null はプロットされないため、受信していないデータは null を保持
+            temperatureData.push({ x: timestamp, y: temp });
+            pressureData.push({ x: timestamp, y: press });
 
-            // 古いデータを削除
-            const cutoffTime = timestamp - (CHART_DURATION_SECONDS * 1000); // 20秒前のタイムスタンプ
-            
-            // 古いデータを削除
-            while (temperatureData.length > 0 && temperatureData[0].x < cutoffTime) {
-                temperatureData.shift();
-            }
-            while (pressureData.length > 0 && pressureData[0].x < cutoffTime) {
-                pressureData.shift();
-            }
+            // 古いデータを削除とX軸の表示範囲更新を定期実行に任せる
+            // ここではデータの追加とChart.jsの更新のみ行う
+            sensorChart.update('none'); // 'none'を指定するとアニメーションなしで更新
+        }
+
+        // 定期的にグラフの表示範囲を更新し、古いデータを削除する関数
+        function updateChartRangeAndCleanup() {
+            const now = new Date().getTime(); // 現在のタイムスタンプ
+            const cutoffTime = now - (CHART_DURATION_SECONDS * 1000); // 20秒前のタイムスタンプ
 
             // X軸の表示範囲を更新
             sensorChart.options.scales.x.min = cutoffTime;
-            sensorChart.options.scales.x.max = timestamp;
+            sensorChart.options.scales.x.max = now;
 
+            // 古いデータを削除
+            // 温度データ
+            while (temperatureData.length > 0 && temperatureData[0].x < cutoffTime) {
+                temperatureData.shift();
+            }
+            // 油圧データ
+            while (pressureData.length > 0 && pressureData[0].x < cutoffTime) {
+                pressureData.shift();
+            }
+            
             // グラフを更新
-            sensorChart.update();
+            // データが追加されていなくても、X軸のスクロールを維持するために定期的に更新
+            sensorChart.update('none');
         }
 
         function disconnectDevice() {
