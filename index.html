@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLEセンサメータ</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            margin-top: 20px; 
+            background-color: #000; 
+            color: #ff0000; 
+        }
+        button {
+            background-color: #ff0000;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1.2em;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .sensor-display-container {
+            display: flex;
+            flex-direction: row; 
+            justify-content: center;
+            align-items: flex-start;
+            gap: 50px;
+            margin-top: 30px;
+        }
+        .digital-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+            width: 100%; 
+            max-width: 230px;
+            min-width: 200px; 
+        }
+        .digital-display {
+            background-color: #333;
+            border: 3px solid #ff0000;
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            width: 200px;
+            text-align: center;
+        }
+        .digital-label {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #ff0000;
+            margin-bottom: 5px;
+        }
+        .digital-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #ff0000;
+        }
+        .external-pressure-display {
+            background-color: #333;
+            border: 3px solid #ff0000;
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            width: 200px;
+            text-align: center;
+        }
+        .external-label {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #ff0000;
+            margin-bottom: 5px;
+        }
+        .external-value {
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #ff0000;
+        }
+        .meter {
+            width: 100%; 
+            max-width: 250px; 
+            aspect-ratio: 1 / 1;
+            min-width: 180px;
+            flex-shrink: 0;
+            position: relative;
+            border: 5px solid #ff0000;
+            border-radius: 50%;
+            background: #333;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .meter-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 12px;
+            height: 12px;
+            background-color: #ff0000;
+            border-radius: 50%;
+            transform: translate(-50%, -50%); 
+            z-index: 2;
+        }
+        .meter-needle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 5px;
+            height: 110px;
+            background-color: #ff0000;
+            transform-origin: bottom center;
+            transform: translateX(-50%) translateY(-100%); 
+            transition: transform 0.2s ease-out;
+            z-index: 1;
+        }
+        .meter-number {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            font-size: 0.9em;
+            color: #ff0000;
+            font-weight: bold;
+            z-index: 3;
+        }
+    </style>
+</head>
+<body>
+    <button id="connectButton">BLEデバイスに接続</button>
+
+    <div class="sensor-display-container">
+        <div class="digital-panel">
+            <div class="digital-display">
+                <div class="digital-label">油温 (&deg;C)</div>
+                <div class="digital-value" id="tempValue">--.--</div>
+            </div>
+            <div class="external-pressure-display">
+                <div class="external-label">油圧 (kPa)</div>
+                <div class="external-value" id="pressValue">--.--</div>
+            </div>
+        </div> 
+
+        <div class="meter">
+            <div class="meter-needle" id="pressNeedle"></div>
+            <div class="meter-center"></div>
+            <script>
+                // JavaScriptでメーターの数値を動的に配置 (Arduino側からコピー)
+                const NUMBER_RADIUS = 105.0; 
+                const MARKER_START_DEGREE = 180.0; 
+                const MARKER_END_DEGREE = 450.0;   
+                const MARKER_TOTAL_RANGE_DEGREE = MARKER_END_DEGREE - MARKER_START_DEGREE; 
+                const MARKER_OFFSET_DEGREE = -90.0; 
+
+                for (let i = 0; i <= 1000; i += 100) { 
+                    let current_value = parseFloat(i);
+                    let base_degree = MARKER_START_DEGREE + (current_value / 1000.0) * MARKER_TOTAL_RANGE_DEGREE;
+                    let final_degree = base_degree + MARKER_OFFSET_DEGREE;
+                    
+                    document.write(`<div class='meter-number' style='transform: rotate(${final_degree}deg) translate(${NUMBER_RADIUS}px) rotate(-${final_degree}deg) translate(-50%, -50%);'>${i}</div>`);
+                }
+            </script>
+        </div> </div> <script>
+        // Arduinoスケッチで設定したUUIDをここに記述
+        // 必ずご自身のUUIDに置き換えてください！
+        const SERVICE_UUID = 'YOUR_SERVICE_UUID_HERE'; // 例: '19b10000-e8f2-537e-4f6c-d104768a1214' (小文字)
+        const TEMPERATURE_CHARACTERISTIC_UUID = 'YOUR_TEMP_CHAR_UUID_HERE'; // 例: '19b10001-e8f2-537e-4f6c-d104768a1214'
+        const PRESSURE_CHARACTERISTIC_UUID = 'YOUR_PRESS_CHAR_UUID_HERE'; // 例: '19b10002-e8f2-537e-4f6c-d104768a1214'
+
+        let sensorDevice;
+        let temperatureChar;
+        let pressureChar;
+
+        const MIN_DEGREE = 180.0; 
+        const MAX_DEGREE = 450.0; 
+        const TOTAL_DEGREE_RANGE = MAX_DEGREE - MIN_DEGREE; 
+        const PRESS_MIN_VALUE = 0.0;
+        const PRESS_MAX_VALUE = 1000.0; 
+
+        document.getElementById('connectButton').addEventListener('click', async () => {
+            try {
+                // 1. デバイスのスキャンと接続
+                // filtersで特定のサービスUUIDを持つデバイスに絞り込む
+                sensorDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [SERVICE_UUID] }]
+                });
+
+                console.log('選択されたデバイス:', sensorDevice.name);
+
+                // 接続が切れた場合のイベントリスナー
+                sensorDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                // 2. GATTサーバーへの接続
+                const server = await sensorDevice.gatt.connect();
+                console.log('GATTサーバーに接続しました。');
+
+                // 3. サービスとキャラクタリスティックの取得
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                temperatureChar = await service.getCharacteristic(TEMPERATURE_CHARACTERISTIC_UUID);
+                pressureChar = await service.getCharacteristic(PRESSURE_CHARACTERISTIC_UUID);
+                console.log('キャラクタリスティックを取得しました。');
+
+                // 4. データの購読 (Notify)
+                // 温度の通知を設定
+                temperatureChar.addEventListener('characteristicvaluechanged', handleTemperatureNotifications);
+                await temperatureChar.startNotifications();
+                console.log('温度の通知を開始しました。');
+
+                // 油圧の通知を設定
+                pressureChar.addEventListener('characteristicvaluechanged', handlePressureNotifications);
+                await pressureChar.startNotifications();
+                console.log('油圧の通知を開始しました。');
+
+                document.getElementById('connectButton').textContent = '接続済み (切断)'; // ボタンのテキストを変更
+                document.getElementById('connectButton').onclick = disconnectDevice; // 切断関数を割り当てる
+
+            } catch (error) {
+                console.error('BLE接続エラー:', error);
+                alert('BLEデバイスへの接続に失敗しました。詳細をコンソールで確認してください。');
+                document.getElementById('connectButton').textContent = 'BLEデバイスに接続';
+                document.getElementById('connectButton').onclick = connectDevice;
+            }
+        });
+
+        // 接続が切れた場合の処理
+        function onDisconnected(event) {
+            const device = event.target;
+            console.log(`デバイス "${device.name}" が切断されました。`);
+            document.getElementById('tempValue').textContent = '--.--';
+            document.getElementById('pressValue').textContent = '--.--';
+            document.getElementById('pressNeedle').style.transform = 'translateX(-50%) translateY(-100%) rotate(180deg)'; // 初期位置に戻す
+            document.getElementById('connectButton').textContent = 'BLEデバイスに接続'; // ボタンのテキストを戻す
+            document.getElementById('connectButton').onclick = connectDevice; // 接続関数を割り当てる
+        }
+
+        // 温度の通知ハンドラー
+        function handleTemperatureNotifications(event) {
+            const value = event.target.value; // DataViewオブジェクト
+            const temperature = value.getFloat32(0, true); // floatとして読み取る (リトルエンディアン)
+            document.getElementById('tempValue').textContent = temperature.toFixed(2);
+            // console.log(`温度: ${temperature.toFixed(2)}`);
+        }
+
+        // 油圧の通知ハンドラー
+        function handlePressureNotifications(event) {
+            const value = event.target.value; // DataViewオブジェクト
+            const pressure = value.getFloat32(0, true); // floatとして読み取る (リトルエンディアン)
+            updateMeter(pressure, PRESS_MIN_VALUE, PRESS_MAX_VALUE, 'pressNeedle', 'pressValue');
+            // console.log(`油圧: ${pressure.toFixed(2)}`);
+        }
+
+        // メーターの針を更新する関数 (既存のもの)
+        function updateMeter(value, minValue, maxValue, needleId, valueId) {
+            let normalizedValue = (value - minValue) / (maxValue - minValue);
+            if (normalizedValue < 0) normalizedValue = 0;
+            if (normalizedValue > 1) normalizedValue = 1;
+
+            let rotation = MIN_DEGREE + normalizedValue * TOTAL_DEGREE_RANGE;
+            document.getElementById(needleId).style.transform = 'translateX(-50%) translateY(-100%) rotate(' + rotation + 'deg)';
+            document.getElementById(valueId).textContent = value.toFixed(2); 
+        }
+
+        // デバイス切断関数
+        function disconnectDevice() {
+            if (sensorDevice && sensorDevice.gatt.connected) {
+                sensorDevice.gatt.disconnect();
+                console.log('デバイスを切断しました。');
+            } else {
+                console.log('接続中のデバイスはありません。');
+            }
+        }
+        
+        // 接続ボタンの初期設定
+        function connectDevice() {
+             document.getElementById('connectButton').click(); // ボタンクリックをシミュレート
+        }
+
+        // ページロード時に接続関数をボタンに割り当てる
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('connectButton').onclick = connectDevice;
+        });
+
+    </script>
+</body>
+</html>
