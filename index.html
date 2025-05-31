@@ -11,11 +11,11 @@
             margin-top: 20px; 
             background-color: #000; 
             color: #ff0000; 
-            display: flex; /* bodyをFlexコンテナにする */
-            flex-direction: column; /* 要素を縦に並べる */
-            align-items: center; /* 中央揃え */
-            min-height: 95vh; /* 画面の高さに合わせる */
-            justify-content: flex-start; /* 上から配置 */
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            min-height: 95vh; 
+            justify-content: flex-start; 
         }
         button {
             background-color: #ff0000;
@@ -25,28 +25,27 @@
             font-size: 1.2em;
             cursor: pointer;
             border-radius: 5px;
-            margin-top: 30px; /* 各メーターとの間隔 */
+            margin-top: 30px; 
             margin-bottom: 20px;
         }
-        /* sensor-display-container は廃止し、body直下に配置します */
         
         .digital-panel {
             display: flex;
-            flex-direction: column; /* デジタルパネル内の要素は縦並びを維持 */
+            flex-direction: column; 
             align-items: center;
-            gap: 30px; /* デジタル表示間の間隔 */
+            gap: 30px; 
             width: 100%; 
             max-width: 230px;
             min-width: 200px; 
-            margin-top: 30px; /* アナログメーターとの間隔 */
+            margin-top: 30px; 
         }
-        .digital-display, .external-pressure-display { /* 両方に適用 */
+        .digital-display, .external-pressure-display { 
             background-color: #333;
             border: 3px solid #ff0000;
             border-radius: 10px;
             padding: 10px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            width: 200px; /* 幅を固定 */
+            width: 200px;
             text-align: center;
         }
         .digital-label, .external-label {
@@ -56,11 +55,10 @@
             margin-bottom: 5px;
         }
         .digital-value, .external-value {
-            font-size: 2.5em; /* 油温の値を大きく */
+            font-size: 2.5em; 
             font-weight: bold;
             color: #ff0000;
         }
-        /* 油圧のデジタル値は少し小さめに調整しても良いかもしれません */
         .external-value {
              font-size: 2.2em;
         }
@@ -77,7 +75,7 @@
             background: #333;
             overflow: hidden;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            margin-top: 20px; /* bodyのtop-marginを考慮し、微調整 */
+            margin-top: 20px; 
         }
         .meter-center {
             position: absolute;
@@ -98,7 +96,7 @@
             height: 110px;
             background-color: #ff0000;
             transform-origin: bottom center;
-            transform: translateX(-50%) translateY(-100%) rotate(180deg); /* 初期位置を調整 */
+            transform: translateX(-50%) translateY(-100%) rotate(180deg); 
             transition: transform 0.2s ease-out;
             z-index: 1;
         }
@@ -106,7 +104,7 @@
             position: absolute;
             top: 50%;
             left: 50%;
-            font-size: 0.9em;
+            font-size: 1.2em; /* ここを調整してください */
             color: #ff0000;
             font-weight: bold;
             z-index: 3;
@@ -167,7 +165,6 @@
 
         document.getElementById('connectButton').addEventListener('click', async () => {
             try {
-                // 1. デバイスのスキャンと接続
                 sensorDevice = await navigator.bluetooth.requestDevice({
                     filters: [{ services: [SERVICE_UUID] }]
                 });
@@ -176,17 +173,14 @@
 
                 sensorDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
-                // 2. GATTサーバーへの接続
                 const server = await sensorDevice.gatt.connect();
                 console.log('GATTサーバーに接続しました。');
 
-                // 3. サービスとキャラクタリスティックの取得
                 const service = await server.getPrimaryService(SERVICE_UUID);
                 temperatureChar = await service.getCharacteristic(TEMPERATURE_CHARACTERISTIC_UUID);
                 pressureChar = await service.getCharacteristic(PRESSURE_CHARACTERISTIC_UUID);
                 console.log('キャラクタリスティックを取得しました。');
 
-                // 4. データの購読 (Notify)
                 temperatureChar.addEventListener('characteristicvaluechanged', handleTemperatureNotifications);
                 await temperatureChar.startNotifications();
                 console.log('温度の通知を開始しました。');
@@ -206,7 +200,6 @@
             }
         });
 
-        // 接続が切れた場合の処理
         function onDisconnected(event) {
             const device = event.target;
             console.log(`デバイス "${device.name}" が切断されました。`);
@@ -217,21 +210,18 @@
             document.getElementById('connectButton').onclick = connectDevice; 
         }
 
-        // 温度の通知ハンドラー
         function handleTemperatureNotifications(event) {
             const value = event.target.value; 
             const temperature = value.getFloat32(0, true); 
             document.getElementById('tempValue').textContent = temperature.toFixed(2);
         }
 
-        // 油圧の通知ハンドラー
         function handlePressureNotifications(event) {
             const value = event.target.value; 
             const pressure = value.getFloat32(0, true); 
             updateMeter(pressure, PRESS_MIN_VALUE, PRESS_MAX_VALUE, 'pressNeedle', 'pressValue');
         }
 
-        // メーターの針を更新する関数 (既存のもの)
         function updateMeter(value, minValue, maxValue, needleId, valueId) {
             let normalizedValue = (value - minValue) / (maxValue - minValue);
             if (normalizedValue < 0) normalizedValue = 0;
@@ -242,7 +232,6 @@
             document.getElementById(valueId).textContent = value.toFixed(2); 
         }
 
-        // デバイス切断関数
         function disconnectDevice() {
             if (sensorDevice && sensorDevice.gatt.connected) {
                 sensorDevice.gatt.disconnect();
@@ -252,12 +241,10 @@
             }
         }
         
-        // 接続ボタンの初期設定
         function connectDevice() {
              document.getElementById('connectButton').click(); 
         }
 
-        // ページロード時に接続関数をボタンに割り当てる
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('connectButton').onclick = connectDevice;
         });
