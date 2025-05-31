@@ -190,7 +190,7 @@
         const PRESS_MAX_VALUE = 1000.0;
 
         // グラフ関連の変数
-        const MAX_DATA_POINTS = 20; // ★変更点★ 過去20秒分のデータを保持
+        const MAX_DATA_POINTS = 20; // 過去20秒分のデータを保持
         let chartLabels = []; // 時間 (秒)
         let temperatureData = [];
         let pressureData = [];
@@ -238,17 +238,17 @@
                             ticks: {
                                 color: '#ff0000',
                                 callback: function(value, index, ticks) {
-                                    // ★変更点★ X軸の表示を調整
-                                    // グラフがスクロールするように、相対的な時間を表示
-                                    // 最新のデータが 0s、一番古いデータが -19s となるように調整
-                                    return (index - (chartLabels.length - 1)) + 's';
+                                    // ★変更点★ X軸の表示を-20sから0sに固定
+                                    // valueは内部的なインデックス（0からMAX_DATA_POINTS-1）
+                                    // 最新のデータ（一番右）が0sになるように計算
+                                    return (value - (MAX_DATA_POINTS - 1)) + 's';
                                 }
                             },
                             grid: {
                                 color: 'rgba(255, 0, 0, 0.2)'
                             },
-                            min: 0, // X軸の最小値を固定 (0-indexedラベルの相対時間)
-                            max: MAX_DATA_POINTS - 1 // X軸の最大値を固定
+                            min: 0, // 内部的なラベルのインデックスの最小値
+                            max: MAX_DATA_POINTS - 1 // 内部的なラベルのインデックスの最大値
                         },
                         yTemp: { // 油温用のY軸
                             position: 'left', // 左側に表示
@@ -387,9 +387,6 @@
             }
 
             // 新しいデータを追加
-            // X軸のラベルはtimeCountをそのまま使うと、ずれていくので
-            // ここでは単に配列のインデックスをそのまま利用します。
-            // Chart.jsのcallbackで相対的な時間に変換します。
             chartLabels.push(timeCount++);
             temperatureData.push(temp);
             pressureData.push(press);
