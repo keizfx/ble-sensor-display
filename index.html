@@ -115,7 +115,7 @@
         .chart-container {
             width: 100%;
             max-width: 600px; /* グラフの最大幅を調整 */
-            height: 300px; /* ★ここを追加または調整★ グラフの高さ */
+            height: 300px; /* グラフの高さ */
             margin-top: 30px;
             background-color: #333;
             border: 3px solid #ff0000;
@@ -168,7 +168,7 @@
     <button id="connectButton">BLEデバイスに接続</button>
 
     <div class="chart-container">
-        <div class="chart-title">油温・油圧 過去30秒</div>
+        <div class="chart-title">油温・油圧 過去20秒</div>
         <canvas id="sensorChart"></canvas>
     </div>
 
@@ -190,7 +190,7 @@
         const PRESS_MAX_VALUE = 1000.0;
 
         // グラフ関連の変数
-        const MAX_DATA_POINTS = 30; // 過去30秒分のデータを保持
+        const MAX_DATA_POINTS = 20; // ★変更点★ 過去20秒分のデータを保持
         let chartLabels = []; // 時間 (秒)
         let temperatureData = [];
         let pressureData = [];
@@ -238,16 +238,17 @@
                             ticks: {
                                 color: '#ff0000',
                                 callback: function(value, index, ticks) {
+                                    // ★変更点★ X軸の表示を調整
                                     // グラフがスクロールするように、相対的な時間を表示
-                                    // timeCountから現在のインデックスとデータの長さを引く
-                                    // ここで時間軸を正確に表示するために、timeCountとchartLabels.lengthを考慮する
-                                    // 例: 最新のデータが0s、30s前が-30s
-                                    return (index - chartLabels.length + 1) + 's';
+                                    // 最新のデータが 0s、一番古いデータが -19s となるように調整
+                                    return (index - (chartLabels.length - 1)) + 's';
                                 }
                             },
                             grid: {
                                 color: 'rgba(255, 0, 0, 0.2)'
-                            }
+                            },
+                            min: 0, // X軸の最小値を固定 (0-indexedラベルの相対時間)
+                            max: MAX_DATA_POINTS - 1 // X軸の最大値を固定
                         },
                         yTemp: { // 油温用のY軸
                             position: 'left', // 左側に表示
@@ -262,7 +263,7 @@
                             grid: {
                                 color: 'rgba(255, 0, 0, 0.2)'
                             },
-                            min: 0, // 油温の最小値
+                            min: 0, // 油温の最小値 (適宜調整してください)
                             max: 120 // 油温の最大値 (適宜調整してください)
                         },
                         yPress: { // 油圧用のY軸
@@ -278,7 +279,7 @@
                             grid: {
                                 color: 'rgba(255, 0, 0, 0.2)'
                             },
-                            min: 0, // 油圧の最小値
+                            min: 0, // 油圧の最小値 (適宜調整してください)
                             max: 1000 // 油圧の最大値 (適宜調整してください)
                         }
                     },
@@ -379,7 +380,6 @@
         let timeCount = 0; // グラフのX軸の絶対時間カウンタ
         function updateChart(temp, press) {
             // データポイントが最大数を超えたら古いものを削除
-            // X軸のラベルはtimeCountをそのまま使うと、ずれていくので相対的な時間で表示する
             if (chartLabels.length >= MAX_DATA_POINTS) {
                 chartLabels.shift();
                 temperatureData.shift();
@@ -387,7 +387,10 @@
             }
 
             // 新しいデータを追加
-            chartLabels.push(timeCount++); // データを追加するごとにタイムスタンプをインクリメント
+            // X軸のラベルはtimeCountをそのまま使うと、ずれていくので
+            // ここでは単に配列のインデックスをそのまま利用します。
+            // Chart.jsのcallbackで相対的な時間に変換します。
+            chartLabels.push(timeCount++);
             temperatureData.push(temp);
             pressureData.push(press);
 
