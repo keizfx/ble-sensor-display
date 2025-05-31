@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BLEセンサメータ</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -190,19 +191,19 @@
         const PRESS_MAX_VALUE = 1000.0;
 
         // グラフ関連の変数
-        const MAX_DATA_POINTS = 20; // 過去20秒分のデータを保持
-        let chartLabels = []; // 時間 (秒)
-        let temperatureData = [];
-        let pressureData = [];
+        const CHART_DURATION_SECONDS = 20; // グラフの表示期間（秒）
+        const REMOVE_OLD_DATA_INTERVAL_MS = 1000; // 古いデータをチェックし削除する間隔（ミリ秒）
+        
+        let temperatureData = []; // データ形式: { x: timestamp(ms), y: value }
+        let pressureData = [];    // データ形式: { x: timestamp(ms), y: value }
         let sensorChart; // Chart.jsインスタンス
-
+        
         // Chart.jsの初期化
         document.addEventListener('DOMContentLoaded', () => {
             const ctx = document.getElementById('sensorChart').getContext('2d');
             sensorChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: chartLabels,
                     datasets: [
                         {
                             label: '油温 (°C)',
@@ -211,7 +212,8 @@
                             backgroundColor: 'rgba(0, 204, 255, 0.2)',
                             tension: 0.1, // 線の滑らかさ
                             fill: false, // 塗りつぶしなし
-                            yAxisID: 'yTemp' // Y軸ID
+                            yAxisID: 'yTemp', // Y軸ID
+                            parsing: false // x,yプロパティを直接使うためパースを無効化
                         },
                         {
                             label: '油圧 (kPa)',
@@ -220,35 +222,48 @@
                             backgroundColor: 'rgba(255, 204, 0, 0.2)',
                             tension: 0.1,
                             fill: false,
-                            yAxisID: 'yPress' // Y軸ID
+                            yAxisID: 'yPress', // Y軸ID
+                            parsing: false // x,yプロパティを直接使うためパースを無効化
                         }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false, // アスペクト比を固定しない
+                    animation: {
+                        duration: 0 // アニメーションを無効化してスムーズなスクロールを実現
+                    },
                     scales: {
                         x: {
-                            type: 'linear', // 時間軸を線形スケールとして扱う
+                            type: 'time', // ★変更点★ 時間軸に設定
+                            time: {
+                                unit: 'second', // 秒単位
+                                displayFormats: {
+                                    second: 'mm:ss' // 例: 00:00, 00:01
+                                },
+                                tooltipFormat: 'yyyy/MM/dd HH:mm:ss' // ツールチップの表示形式
+                            },
                             title: {
                                 display: true,
-                                text: '時間 (秒)',
+                                text: '時間',
                                 color: '#ff0000'
                             },
                             ticks: {
                                 color: '#ff0000',
                                 callback: function(value, index, ticks) {
                                     // ★変更点★ X軸の表示を-20sから0sに固定
-                                    // valueは内部的なインデックス（0からMAX_DATA_POINTS-1）
-                                    // 最新のデータ（一番右）が0sになるように計算
-                                    return (value - (MAX_DATA_POINTS - 1)) + 's';
+                                    // 最新のタイムスタンプとの差を計算して表示
+                                    if (temperatureData.length === 0 && pressureData.length === 0) return '';
+                                    const now = new Date().getTime();
+                                    const diffSeconds = Math.round((value - now) / 1000);
+                                    // 0s は現在時刻、-1s は1秒前
+                                    return diffSeconds + 's';
                                 }
                             },
                             grid: {
                                 color: 'rgba(255, 0, 0, 0.2)'
                             },
-                            min: 0, // 内部的なラベルのインデックスの最小値
-                            max: MAX_DATA_POINTS - 1 // 内部的なラベルのインデックスの最大値
+                            // minとmaxはupdateChartで動的に設定するためここでは指定しない
                         },
                         yTemp: { // 油温用のY軸
                             position: 'left', // 左側に表示
@@ -343,27 +358,27 @@
             document.getElementById('connectButton').onclick = connectDevice;
 
             // グラフデータをリセット
-            chartLabels = [];
             temperatureData = [];
             pressureData = [];
             sensorChart.update();
-            timeCount = 0; // timeCountもリセット
         }
 
         function handleTemperatureNotifications(event) {
             const value = event.target.value;
             const temperature = value.getFloat32(0, true);
             document.getElementById('tempValue').textContent = temperature.toFixed(2);
-            // updateChartは、最新の温度と、既に取得している油圧の最新値を使って呼び出す
-            updateChart(temperature, pressureData.length > 0 ? pressureData[pressureData.length - 1] : NaN);
+            // 現在のタイムスタンプを取得
+            const now = new Date().getTime();
+            updateChartData(now, temperature, pressureData.length > 0 ? pressureData[pressureData.length - 1].y : NaN);
         }
 
         function handlePressureNotifications(event) {
             const value = event.target.value;
             const pressure = value.getFloat32(0, true);
             updateMeter(pressure, PRESS_MIN_VALUE, PRESS_MAX_VALUE, 'pressNeedle', 'pressValue');
-            // updateChartは、最新の油圧と、既に取得している油温の最新値を使って呼び出す
-            updateChart(temperatureData.length > 0 ? temperatureData[temperatureData.length - 1] : NaN, pressure);
+            // 現在のタイムスタンプを取得
+            const now = new Date().getTime();
+            updateChartData(now, temperatureData.length > 0 ? temperatureData[temperatureData.length - 1].y : NaN, pressure);
         }
 
         function updateMeter(value, minValue, maxValue, needleId, valueId) {
@@ -376,20 +391,31 @@
             document.getElementById(valueId).textContent = value.toFixed(2);
         }
 
-        // グラフ更新関数
-        let timeCount = 0; // グラフのX軸の絶対時間カウンタ
-        function updateChart(temp, press) {
-            // データポイントが最大数を超えたら古いものを削除
-            if (chartLabels.length >= MAX_DATA_POINTS) {
-                chartLabels.shift();
+        // グラフデータ更新関数
+        function updateChartData(timestamp, temp, press) {
+            // 新しいデータを追加
+            // NaN (Not a Number) はプロットされないので、初期値やデータがない場合はNaNを渡す
+            if (!isNaN(temp)) {
+                temperatureData.push({ x: timestamp, y: temp });
+            }
+            if (!isNaN(press)) {
+                pressureData.push({ x: timestamp, y: press });
+            }
+
+            // 古いデータを削除
+            const cutoffTime = timestamp - (CHART_DURATION_SECONDS * 1000); // 20秒前のタイムスタンプ
+            
+            // 古いデータを削除
+            while (temperatureData.length > 0 && temperatureData[0].x < cutoffTime) {
                 temperatureData.shift();
+            }
+            while (pressureData.length > 0 && pressureData[0].x < cutoffTime) {
                 pressureData.shift();
             }
 
-            // 新しいデータを追加
-            chartLabels.push(timeCount++);
-            temperatureData.push(temp);
-            pressureData.push(press);
+            // X軸の表示範囲を更新
+            sensorChart.options.scales.x.min = cutoffTime;
+            sensorChart.options.scales.x.max = timestamp;
 
             // グラフを更新
             sensorChart.update();
