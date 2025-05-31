@@ -20,7 +20,9 @@
             font-size: 1.2em;
             cursor: pointer;
             border-radius: 5px;
-            margin-bottom: 20px;
+            /* margin-bottomは不要になるか、margin-topに変更する */
+            margin-top: 20px; /* メーターとボタンの間に少しスペースを開ける */
+            margin-bottom: 20px; /* 必要であれば */
         }
         .sensor-display-container {
             display: flex;
@@ -127,8 +129,6 @@
     </style>
 </head>
 <body>
-    <button id="connectButton">BLEデバイスに接続</button>
-
     <div class="sensor-display-container">
         <div class="digital-panel">
             <div class="digital-display">
@@ -160,12 +160,15 @@
                     document.write(`<div class='meter-number' style='transform: rotate(${final_degree}deg) translate(${NUMBER_RADIUS}px) rotate(-${final_degree}deg) translate(-50%, -50%);'>${i}</div>`);
                 }
             </script>
-        </div> </div> <script>
+        </div> 
+    </div> <button id="connectButton">BLEデバイスに接続</button>
+
+    <script>
         // Arduinoスケッチで設定したUUIDをここに記述
         // 必ずご自身のUUIDに置き換えてください！
-        const SERVICE_UUID = '93c51ed2-cfe3-409c-a0f2-c41b2bb9fca3'; // 例: '19b10000-e8f2-537e-4f6c-d104768a1214' (小文字)
-        const TEMPERATURE_CHARACTERISTIC_UUID = 'bb3626f1-393f-486d-9a94-0700ee1c88ac'; // 例: '19b10001-e8f2-537e-4f6c-d104768a1214'
-        const PRESSURE_CHARACTERISTIC_UUID = 'c72e0888-651b-4a83-8b69-4b124ee8ad21'; // 例: '19b10002-e8f2-537e-4f6c-d104768a1214'
+        const SERVICE_UUID = '93c51ed2-cfe3-409c-a0f2-c41b2bb9fca3'; 
+        const TEMPERATURE_CHARACTERISTIC_UUID = 'bb3626f1-393f-486d-9a94-0700ee1c88ac'; 
+        const PRESSURE_CHARACTERISTIC_UUID = 'c72e0888-651b-4a83-8b69-4b124ee8ad21'; 
 
         let sensorDevice;
         let temperatureChar;
@@ -211,8 +214,8 @@
                 await pressureChar.startNotifications();
                 console.log('油圧の通知を開始しました。');
 
-                document.getElementById('connectButton').textContent = '接続済み (切断)'; // ボタンのテキストを変更
-                document.getElementById('connectButton').onclick = disconnectDevice; // 切断関数を割り当てる
+                document.getElementById('connectButton').textContent = '接続済み (切断)'; 
+                document.getElementById('connectButton').onclick = disconnectDevice; 
 
             } catch (error) {
                 console.error('BLE接続エラー:', error);
@@ -228,25 +231,23 @@
             console.log(`デバイス "${device.name}" が切断されました。`);
             document.getElementById('tempValue').textContent = '--.--';
             document.getElementById('pressValue').textContent = '--.--';
-            document.getElementById('pressNeedle').style.transform = 'translateX(-50%) translateY(-100%) rotate(180deg)'; // 初期位置に戻す
-            document.getElementById('connectButton').textContent = 'BLEデバイスに接続'; // ボタンのテキストを戻す
-            document.getElementById('connectButton').onclick = connectDevice; // 接続関数を割り当てる
+            document.getElementById('pressNeedle').style.transform = 'translateX(-50%) translateY(-100%) rotate(180deg)'; 
+            document.getElementById('connectButton').textContent = 'BLEデバイスに接続'; 
+            document.getElementById('connectButton').onclick = connectDevice; 
         }
 
         // 温度の通知ハンドラー
         function handleTemperatureNotifications(event) {
-            const value = event.target.value; // DataViewオブジェクト
-            const temperature = value.getFloat32(0, true); // floatとして読み取る (リトルエンディアン)
+            const value = event.target.value; 
+            const temperature = value.getFloat32(0, true); 
             document.getElementById('tempValue').textContent = temperature.toFixed(2);
-            // console.log(`温度: ${temperature.toFixed(2)}`);
         }
 
         // 油圧の通知ハンドラー
         function handlePressureNotifications(event) {
-            const value = event.target.value; // DataViewオブジェクト
-            const pressure = value.getFloat32(0, true); // floatとして読み取る (リトルエンディアン)
+            const value = event.target.value; 
+            const pressure = value.getFloat32(0, true); 
             updateMeter(pressure, PRESS_MIN_VALUE, PRESS_MAX_VALUE, 'pressNeedle', 'pressValue');
-            // console.log(`油圧: ${pressure.toFixed(2)}`);
         }
 
         // メーターの針を更新する関数 (既存のもの)
@@ -272,7 +273,7 @@
         
         // 接続ボタンの初期設定
         function connectDevice() {
-             document.getElementById('connectButton').click(); // ボタンクリックをシミュレート
+             document.getElementById('connectButton').click(); 
         }
 
         // ページロード時に接続関数をボタンに割り当てる
