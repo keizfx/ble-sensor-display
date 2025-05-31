@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BLEセンサメータ</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -111,26 +109,6 @@
             font-weight: bold;
             z-index: 3;
         }
-
-        /* グラフのスタイル */
-        .chart-container {
-            width: 100%;
-            max-width: 600px; /* グラフの最大幅を調整 */
-            height: 300px; /* グラフの高さ */
-            margin-top: 30px;
-            background-color: #333;
-            border: 3px solid #ff0000;
-            border-radius: 10px;
-            padding: 15px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            box-sizing: border-box; /* paddingとborderをwidthに含める */
-        }
-        .chart-title {
-            font-size: 1.5em;
-            font-weight: bold;
-            color: #ff0000;
-            margin-bottom: 10px;
-        }
     </style>
 </head>
 <body>
@@ -168,11 +146,6 @@
 
     <button id="connectButton">BLEデバイスに接続</button>
 
-    <div class="chart-container">
-        <div class="chart-title">油温・油圧 過去20秒</div>
-        <canvas id="sensorChart"></canvas>
-    </div>
-
     <script>
         // Arduinoスケッチで設定したUUIDをここに記述
         // 必ずご自身のUUIDに置き換えてください！
@@ -190,132 +163,11 @@
         const PRESS_MIN_VALUE = 0.0;
         const PRESS_MAX_VALUE = 1000.0;
 
-        // グラフ関連の変数
-        const CHART_DURATION_SECONDS = 20; // グラフの表示期間（秒）
-        const CLEANUP_INTERVAL_MS = 1000; // 1秒ごとに古いデータをチェックして削除
-
-        let temperatureData = []; // データ形式: { x: timestamp(ms), y: value }
-        let pressureData = [];    // データ形式: { x: timestamp(ms), y: value }
-        let sensorChart; // Chart.jsインスタンス
-
-        // 最新の油温・油圧を保持する変数 (グラフ更新時に両方の値が必要なため)
-        let latestTemperature = null;
-        let latestPressure = null;
-
-        // Chart.jsの初期化
+        // Chart.js関連のDOMCotenLoadedイベントリスナーを削除したため、
+        // ボタンのイベントリスナーは直接DOMContentLoadedに追加
         document.addEventListener('DOMContentLoaded', () => {
-            const ctx = document.getElementById('sensorChart').getContext('2d');
-            sensorChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    datasets: [
-                        {
-                            label: '油温 (°C)',
-                            data: temperatureData,
-                            borderColor: '#00ccff', // 油温のグラフの色 (青系)
-                            backgroundColor: 'rgba(0, 204, 255, 0.2)',
-                            tension: 0.1, // 線の滑らかさ
-                            fill: false, // 塗りつぶしなし
-                            yAxisID: 'yTemp', // Y軸ID
-                            parsing: false // x,yプロパティを直接使うためパースを無効化
-                        },
-                        {
-                            label: '油圧 (kPa)',
-                            data: pressureData,
-                            borderColor: '#ffcc00', // 油圧のグラフの色 (黄系)
-                            backgroundColor: 'rgba(255, 204, 0, 0.2)',
-                            tension: 0.1,
-                            fill: false,
-                            yAxisID: 'yPress', // Y軸ID
-                            parsing: false // x,yプロパティを直接使うためパースを無効化
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false, // アスペクト比を固定しない
-                    animation: {
-                        duration: 0 // アニメーションを無効化してスムーズなスクロールを実現
-                    },
-                    scales: {
-                        x: {
-                            type: 'time', // 時間軸に設定
-                            time: {
-                                unit: 'second', // 秒単位
-                                displayFormats: {
-                                    second: 'HH:mm:ss' // 例: 00:00:00 (時間表示を明確に)
-                                },
-                                tooltipFormat: 'yyyy/MM/dd HH:mm:ss' // ツールチップの表示形式
-                            },
-                            title: {
-                                display: true,
-                                text: '時間',
-                                color: '#ff0000'
-                            },
-                            ticks: {
-                                color: '#ff0000',
-                                callback: function(value, index, ticks) {
-                                    // 最新のタイムスタンプとの差を計算して表示
-                                    // 常に最新のデータが0sの位置、20秒前が-20sの位置になるようにする
-                                    const nowMs = new Date().getTime(); // 現在のタイムスタンプ
-                                    const diffSeconds = Math.round((value - nowMs) / 1000); // 描画しているティックのタイムスタンプと現在時刻との差
-                                    return diffSeconds + 's';
-                                }
-                            },
-                            grid: {
-                                color: 'rgba(255, 0, 0, 0.2)'
-                            },
-                            // minとmaxはupdateChartDataで動的に設定するためここでは指定しない
-                        },
-                        yTemp: { // 油温用のY軸
-                            position: 'left', // 左側に表示
-                            title: {
-                                display: true,
-                                text: '油温 (°C)',
-                                color: '#00ccff'
-                            },
-                            ticks: {
-                                color: '#00ccff'
-                            },
-                            grid: {
-                                color: 'rgba(255, 0, 0, 0.2)'
-                            },
-                            min: 0, // 油温の最小値 (適宜調整してください)
-                            max: 120 // 油温の最大値 (適宜調整してください)
-                        },
-                        yPress: { // 油圧用のY軸
-                            position: 'right', // 右側に表示
-                            title: {
-                                display: true,
-                                text: '油圧 (kPa)',
-                                color: '#ffcc00'
-                            },
-                            ticks: {
-                                color: '#ffcc00'
-                            },
-                            grid: {
-                                color: 'rgba(255, 0, 0, 0.2)'
-                            },
-                            min: 0, // 油圧の最小値 (適宜調整してください)
-                            max: 1000 // 油圧の最大値 (適宜調整してください)
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            labels: {
-                                color: '#ff0000' // 凡例の文字色
-                            }
-                        }
-                    }
-                }
-            });
             document.getElementById('connectButton').onclick = connectDevice;
-
-            // 定期的に古いデータを削除し、グラフのX軸を更新するタイマーを開始
-            // このタイマーはsensorChartが初期化された後にのみ実行される
-            setInterval(updateChartRangeAndCleanup, CLEANUP_INTERVAL_MS);
         });
-
 
         document.getElementById('connectButton').addEventListener('click', async () => {
             try {
@@ -362,37 +214,20 @@
             document.getElementById('pressNeedle').style.transform = 'translateX(-50%) translateY(-100%) rotate(180deg)';
             document.getElementById('connectButton').textContent = 'BLEデバイスに接続';
             document.getElementById('connectButton').onclick = connectDevice;
-
-            // グラフデータをリセット
-            temperatureData = [];
-            pressureData = [];
-            latestTemperature = null;
-            latestPressure = null;
-            if (sensorChart) { // ★追加: 初期化されているかチェック
-                sensorChart.update();
-            }
         }
 
         function handleTemperatureNotifications(event) {
             const value = event.target.value;
             const temperature = value.getFloat32(0, true);
             document.getElementById('tempValue').textContent = temperature.toFixed(2);
-            latestTemperature = temperature; // 最新の温度を更新
-
-            if (sensorChart) { // ★変更点★ sensorChartが初期化されているかチェック
-                updateChartData(new Date().getTime(), latestTemperature, latestPressure);
-            }
+            // グラフへのデータ追加は不要になったため削除
         }
 
         function handlePressureNotifications(event) {
             const value = event.target.value;
             const pressure = value.getFloat32(0, true);
             updateMeter(pressure, PRESS_MIN_VALUE, PRESS_MAX_VALUE, 'pressNeedle', 'pressValue');
-            latestPressure = pressure; // 最新の油圧を更新
-
-            if (sensorChart) { // ★変更点★ sensorChartが初期化されているかチェック
-                updateChartData(new Date().getTime(), latestTemperature, latestPressure);
-            }
+            // グラフへのデータ追加は不要になったため削除
         }
 
         function updateMeter(value, minValue, maxValue, needleId, valueId) {
@@ -403,47 +238,6 @@
             let rotation = MIN_DEGREE + normalizedValue * TOTAL_DEGREE_RANGE;
             document.getElementById(needleId).style.transform = 'translateX(-50%) translateY(-100%) rotate(' + rotation + 'deg)';
             document.getElementById(valueId).textContent = value.toFixed(2);
-        }
-
-        // グラフデータ更新関数
-        function updateChartData(timestamp, temp, press) {
-            // 受信したデータのみを新しいタイムスタンプで追加
-            // null はプロットされないため、受信していないデータは null を保持
-            temperatureData.push({ x: timestamp, y: temp });
-            pressureData.push({ x: timestamp, y: press });
-
-            // updateChartRangeAndCleanupがsensorChart.update()を呼ぶので、ここでは呼ばない
-            // もしこの関数が単独で呼ばれるなら、sensorChart.update('none'); が必要
-            // 今回はsetIntervalでchartUpdateTimerがupdateChartDataを呼び出すため、
-            // その後のupdateChartRangeAndCleanupでまとめて更新される
-            // ここでのsensorChart.update()は不要、かつエラーの原因になる可能性があるので削除
-            // sensorChart.update('none'); // ← この行を削除
-        }
-
-        // 定期的にグラフの表示範囲を更新し、古いデータを削除する関数
-        function updateChartRangeAndCleanup() {
-            // sensorChartが初期化されていない場合は何もしない
-            if (!sensorChart) return; 
-
-            const now = new Date().getTime(); // 現在のタイムスタンプ
-            const cutoffTime = now - (CHART_DURATION_SECONDS * 1000); // 20秒前のタイムスタンプ
-
-            // X軸の表示範囲を更新
-            sensorChart.options.scales.x.min = cutoffTime;
-            sensorChart.options.scales.x.max = now;
-
-            // 古いデータを削除
-            // 温度データ
-            while (temperatureData.length > 0 && temperatureData[0].x < cutoffTime) {
-                temperatureData.shift();
-            }
-            // 油圧データ
-            while (pressureData.length > 0 && pressureData[0].x < cutoffTime) {
-                pressureData.shift();
-            }
-            
-            // グラフを更新
-            sensorChart.update('none');
         }
 
         function disconnectDevice() {
