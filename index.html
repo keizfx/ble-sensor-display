@@ -60,7 +60,7 @@
             color: #ff0000;
         }
         .external-value {
-             font-size: 2.2em;
+            font-size: 2.2em;
         }
 
         #pressureMeterCanvas {
@@ -111,7 +111,7 @@
         // Canvasの角度基準: 右真横が0度、時計回りに正の角度が増加。
         // ご要望: 0kPaを真下、1000kPaを右真横、回転方向は時計回り
         const START_ANGLE_DEGREE = 90; // 0kPaの開始位置 (真下)
-        const END_ANGLE_DEGREE = 360;   // 1000kPaの終了位置 (右真横を360度として利用)
+        const END_ANGLE_DEGREE = 360;  // 1000kPaの終了位置 (右真横を360度として利用)
         
         // 時計回りの回転量を計算: 終了角度から開始角度を引く（角度が増加するため）
         const TOTAL_ANGLE_RANGE_DEGREE = END_ANGLE_DEGREE - START_ANGLE_DEGREE; // 360 - 90 = 270度
@@ -307,13 +307,15 @@
         function handleTemperatureNotifications(event) {
             const value = event.target.value;
             const temperature = value.getFloat32(0, true);
-            document.getElementById('tempValue').textContent = temperature.toFixed(2);
+            // 温度を少数第一位に丸める
+            document.getElementById('tempValue').textContent = temperature.toFixed(1);
         }
 
         function handlePressureNotifications(event) {
             const value = event.target.value;
             const pressure = value.getFloat32(0, true);
-            document.getElementById('pressValue').textContent = pressure.toFixed(2);
+            // 圧力を少数第一位に丸める
+            document.getElementById('pressValue').textContent = pressure.toFixed(1);
             updatePressureNeedle(pressure); // 圧力値に基づいて針を更新
         }
 
@@ -327,7 +329,7 @@
         }
 
         function connectDevice() {
-             document.getElementById('connectButton').click();
+            document.getElementById('connectButton').click();
         }
     </script>
 </body>
