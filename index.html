@@ -63,75 +63,21 @@
              font-size: 2.2em;
         }
 
-        .meter {
-            width: 100%;
-            max-width: 250px;
-            aspect-ratio: 1 / 1;
-            min-width: 180px;
-            flex-shrink: 0;
-            position: relative;
-            border: 5px solid #ff0000;
-            border-radius: 50%;
-            background: #333;
-            overflow: hidden;
+        #pressureMeterCanvas {
+            border-radius: 50%; /* CSSのborder-radiusは見た目のため残します */
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             margin-top: 20px;
-        }
-        .meter-center {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 12px;
-            height: 12px;
-            background-color: #ff0000;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 2;
-        }
-        .meter-needle {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 5px;
-            height: 110px;
-            background-color: #ff0000;
-            transform-origin: bottom center;
-            transform: translateX(-50%) translateY(-100%) rotate(180deg);
-            transition: transform 0.2s ease-out;
-            z-index: 1;
-        }
-        .meter-number {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            font-size: 1.2em;
-            color: #ff0000;
-            font-weight: bold;
-            z-index: 3;
+            width: 250px;
+            height: 250px;
+            max-width: 250px;
+            min-width: 180px;
+            /* CanvasのborderはJavaScriptで描画するためCSSからは削除 */
+            /* background-colorもJavaScriptで描画するためCSSからは削除 */
         }
     </style>
 </head>
 <body>
-    <div class="meter">
-        <div class="meter-needle" id="pressNeedle"></div>
-        <div class="meter-center"></div>
-        <script>
-            // JavaScriptでメーターの数値を動的に配置
-            const NUMBER_RADIUS = 105.0;
-            const MARKER_START_DEGREE = 180.0;
-            const MARKER_END_DEGREE = 450.0;
-            const MARKER_TOTAL_RANGE_DEGREE = MARKER_END_DEGREE - MARKER_START_DEGREE;
-            const MARKER_OFFSET_DEGREE = -90.0;
-
-            for (let i = 0; i <= 1000; i += 100) {
-                let current_value = parseFloat(i);
-                let base_degree = MARKER_START_DEGREE + (current_value / 1000.0) * MARKER_TOTAL_RANGE_DEGREE;
-                let final_degree = base_degree + MARKER_OFFSET_DEGREE;
-
-                document.write(`<div class='meter-number' style='transform: rotate(${final_degree}deg) translate(${NUMBER_RADIUS}px) rotate(-${final_degree}deg) translate(-50%, -50%);'>${i}</div>`);
-            }
-        </script>
-    </div>
+    <canvas id="pressureMeterCanvas" width="250" height="250"></canvas>
 
     <div class="digital-panel">
         <div class="external-pressure-display">
@@ -156,18 +102,145 @@
         let sensorDevice;
         let temperatureChar;
         let pressureChar;
+        let pressureMeterCanvas;
+        let pressureMeterCtx;
 
-        const MIN_DEGREE = 180.0;
-        const MAX_DEGREE = 450.0;
-        const TOTAL_DEGREE_RANGE = MAX_DEGREE - MIN_DEGREE;
+        // メーターの最小値と最大値を設定
         const PRESS_MIN_VALUE = 0.0;
         const PRESS_MAX_VALUE = 1000.0;
 
-        // Chart.js関連のDOMCotenLoadedイベントリスナーを削除したため、
-        // ボタンのイベントリスナーは直接DOMContentLoadedに追加
+        // メーターの開始角度と終了角度 (度)
+        // Canvasの角度基準: 右真横が0度、反時計回りが正。
+        // 0kPaを真下 (270度) に設定
+        // 1000kPaを右真横 (0度) に設定 (時計回りに270度進む)
+        const START_ANGLE_DEGREE = 270; // 0kPaの開始位置 (真下)
+        // END_ANGLE_DEGREEは計算のために、START_ANGLE_DEGREEからの時計回りの移動量を加味して設定
+        // 270度から時計回りに270度進むと0度になる
+        const TOTAL_ANGLE_RANGE_DEGREE = 270; // 回転する角度の絶対値 (270度)
+
+        // Canvas描画用の定数
+        const CANVAS_WIDTH = 250;
+        const CANVAS_HEIGHT = 250;
+        const CENTER_X = CANVAS_WIDTH / 2;
+        const CENTER_Y = CANVAS_HEIGHT / 2;
+        const METER_RADIUS = 110; // メーター外周の半径
+        const BORDER_WIDTH = 5; // メーターのボーダー幅
+        const NEEDLE_LENGTH = 95; // 針の長さ
+        const CENTER_DOT_RADIUS = 6; // 中心の点の半径
+        const NUMBER_LABEL_OFFSET = 18; // 数字がメーター外周から離れる距離
+
         document.addEventListener('DOMContentLoaded', () => {
+            pressureMeterCanvas = document.getElementById('pressureMeterCanvas');
+            pressureMeterCtx = pressureMeterCanvas.getContext('2d');
+
+            // Canvasの描画サイズを要素のwidth/height属性に設定
+            pressureMeterCanvas.width = CANVAS_WIDTH;
+            pressureMeterCanvas.height = CANVAS_HEIGHT;
+
+            drawStaticMeterElements(); // 静的なメーター要素を一度だけ描画
+            updatePressureNeedle(0); // 初期状態の針を描画 (値0で真下を指す)
+
             document.getElementById('connectButton').onclick = connectDevice;
         });
+
+        // メーターの静的な部分（背景、目盛り、数値）を描画する関数
+        function drawStaticMeterElements() {
+            // 背景の円
+            pressureMeterCtx.beginPath();
+            pressureMeterCtx.arc(CENTER_X, CENTER_Y, METER_RADIUS, 0, 2 * Math.PI);
+            pressureMeterCtx.fillStyle = '#333'; // 背景色
+            pressureMeterCtx.fill();
+            pressureMeterCtx.strokeStyle = '#ff0000'; // ボーダー色
+            pressureMeterCtx.lineWidth = BORDER_WIDTH; // ボーダー幅
+            pressureMeterCtx.stroke(); // ボーダーを描画
+
+            // 目盛りと数値
+            pressureMeterCtx.font = 'bold 16px Arial';
+            pressureMeterCtx.fillStyle = '#ff0000';
+            pressureMeterCtx.textAlign = 'center';
+            pressureMeterCtx.textBaseline = 'middle';
+
+            for (let i = 0; i <= 1000; i += 100) {
+                const normalizedValue = i / PRESS_MAX_VALUE;
+                // 時計回りの角度計算: 開始角度から正規化された値に応じた回転量を減算
+                let angleDegree = START_ANGLE_DEGREE - (normalizedValue * TOTAL_ANGLE_RANGE_DEGREE);
+                
+                // 角度を0～359の範囲に正規化
+                // 例えば、270 - 270 = 0度
+                // 270 - 0 = 270度
+                angleDegree = (angleDegree % 360 + 360) % 360;
+
+                const angleRad = angleDegree * Math.PI / 180; // 度をラジアンに変換
+
+                // 目盛り線
+                const tickLength = 8;
+                // ボーダーの内側から目盛りを開始するように調整
+                const tickInnerX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2 - tickLength) * Math.cos(angleRad);
+                const tickInnerY = CENTER_Y + (METER_RADIUS - BORDER_WIDTH / 2 - tickLength) * Math.sin(angleRad);
+                const tickOuterX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2) * Math.cos(angleRad); // ボーダーの内側終点
+                const tickOuterY = CENTER_Y + (METER_RADIUS - BORDER_WIDTH / 2) * Math.sin(angleRad);
+
+                pressureMeterCtx.beginPath();
+                pressureMeterCtx.moveTo(tickInnerX, tickInnerY);
+                pressureMeterCtx.lineTo(tickOuterX, tickOuterY);
+                pressureMeterCtx.strokeStyle = '#ff0000';
+                pressureMeterCtx.lineWidth = (i % 200 === 0) ? 3 : 1; // 200単位で太い目盛り
+                pressureMeterCtx.stroke();
+
+                // 数値
+                const numberX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2 - NUMBER_LABEL_OFFSET) * Math.cos(angleRad);
+                const numberY = CENTER_Y + (METER_RADIUS - BORDER_WIDTH / 2 - NUMBER_LABEL_OFFSET) * Math.sin(angleRad);
+                pressureMeterCtx.fillText(i, numberX, numberY);
+            }
+
+            // 中心の点 (針の下に隠れるように最後に描画)
+            pressureMeterCtx.beginPath();
+            pressureMeterCtx.arc(CENTER_X, CENTER_Y, CENTER_DOT_RADIUS, 0, 2 * Math.PI);
+            pressureMeterCtx.fillStyle = '#ff0000';
+            pressureMeterCtx.fill();
+        }
+
+        // 針のみを更新する関数
+        function updatePressureNeedle(value) {
+            const normalizedValue = (value - PRESS_MIN_VALUE) / (PRESS_MAX_VALUE - PRESS_MIN_VALUE);
+            // 時計回りの角度計算: 開始角度から正規化された値に応じた回転量を減算
+            let targetAngleDegree = START_ANGLE_DEGREE - (normalizedValue * TOTAL_ANGLE_RANGE_DEGREE);
+            targetAngleDegree = (targetAngleDegree % 360 + 360) % 360; // 0～359の範囲に正規化
+
+            const targetAngleRad = targetAngleDegree * Math.PI / 180; // 度をラジアンに変換
+
+            // 針の描画領域をクリア
+            // メーター全体の範囲をクリアして静的要素を再描画する方式を維持
+            const clearRadius = METER_RADIUS + BORDER_WIDTH; // メーター全体の範囲をクリア
+            pressureMeterCtx.clearRect(
+                CENTER_X - clearRadius,
+                CENTER_Y - clearRadius,
+                clearRadius * 2,
+                clearRadius * 2
+            );
+
+            // 静的な要素を再描画（クリアされたため）
+            drawStaticMeterElements();
+
+            // 新しい針の描画
+            pressureMeterCtx.beginPath();
+            pressureMeterCtx.moveTo(CENTER_X, CENTER_Y);
+            // 針の先端座標
+            pressureMeterCtx.lineTo(
+                CENTER_X + NEEDLE_LENGTH * Math.cos(targetAngleRad),
+                CENTER_Y + NEEDLE_LENGTH * Math.sin(targetAngleRad)
+            );
+            pressureMeterCtx.strokeStyle = '#ff0000';
+            pressureMeterCtx.lineWidth = 5;
+            pressureMeterCtx.lineCap = 'round'; // 針の先端を丸くする
+            pressureMeterCtx.stroke();
+
+            // 中心の点も再描画（針の上に来るように）
+            pressureMeterCtx.beginPath();
+            pressureMeterCtx.arc(CENTER_X, CENTER_Y, CENTER_DOT_RADIUS, 0, 2 * Math.PI);
+            pressureMeterCtx.fillStyle = '#ff0000';
+            pressureMeterCtx.fill();
+        }
 
         document.getElementById('connectButton').addEventListener('click', async () => {
             try {
@@ -211,7 +284,7 @@
             console.log(`デバイス "${device.name}" が切断されました。`);
             document.getElementById('tempValue').textContent = '--.--';
             document.getElementById('pressValue').textContent = '--.--';
-            document.getElementById('pressNeedle').style.transform = 'translateX(-50%) translateY(-100%) rotate(180deg)';
+            updatePressureNeedle(0); // 切断時に針を初期位置に戻す
             document.getElementById('connectButton').textContent = 'BLEデバイスに接続';
             document.getElementById('connectButton').onclick = connectDevice;
         }
@@ -220,24 +293,13 @@
             const value = event.target.value;
             const temperature = value.getFloat32(0, true);
             document.getElementById('tempValue').textContent = temperature.toFixed(2);
-            // グラフへのデータ追加は不要になったため削除
         }
 
         function handlePressureNotifications(event) {
             const value = event.target.value;
             const pressure = value.getFloat32(0, true);
-            updateMeter(pressure, PRESS_MIN_VALUE, PRESS_MAX_VALUE, 'pressNeedle', 'pressValue');
-            // グラフへのデータ追加は不要になったため削除
-        }
-
-        function updateMeter(value, minValue, maxValue, needleId, valueId) {
-            let normalizedValue = (value - minValue) / (maxValue - minValue);
-            if (normalizedValue < 0) normalizedValue = 0;
-            if (normalizedValue > 1) normalizedValue = 1;
-
-            let rotation = MIN_DEGREE + normalizedValue * TOTAL_DEGREE_RANGE;
-            document.getElementById(needleId).style.transform = 'translateX(-50%) translateY(-100%) rotate(' + rotation + 'deg)';
-            document.getElementById(valueId).textContent = value.toFixed(2);
+            document.getElementById('pressValue').textContent = pressure.toFixed(2);
+            updatePressureNeedle(pressure); // 圧力値に基づいて針を更新
         }
 
         function disconnectDevice() {
