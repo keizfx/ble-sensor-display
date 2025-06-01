@@ -64,15 +64,13 @@
         }
 
         #pressureMeterCanvas {
-            border-radius: 50%; /* CSSのborder-radiusは見た目のため残します */
+            border-radius: 50%;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             margin-top: 20px;
             width: 250px;
             height: 250px;
             max-width: 250px;
             min-width: 180px;
-            /* CanvasのborderはJavaScriptで描画するためCSSからは削除 */
-            /* background-colorもJavaScriptで描画するためCSSからは削除 */
         }
     </style>
 </head>
@@ -109,14 +107,14 @@
         const PRESS_MIN_VALUE = 0.0;
         const PRESS_MAX_VALUE = 1000.0;
 
-        // メーターの開始角度と終了角度 (度)
-        // Canvasの角度基準: 右真横が0度、反時計回りが正。
-        // 0kPaを真下 (270度) に設定
-        // 1000kPaを右真横 (0度) に設定 (時計回りに270度進む)
-        const START_ANGLE_DEGREE = 270; // 0kPaの開始位置 (真下)
-        // END_ANGLE_DEGREEは計算のために、START_ANGLE_DEGREEからの時計回りの移動量を加味して設定
-        // 270度から時計回りに270度進むと0度になる
-        const TOTAL_ANGLE_RANGE_DEGREE = 270; // 回転する角度の絶対値 (270度)
+        // メーターの角度設定 (度)
+        // Canvasの角度基準: 右真横が0度、時計回りに正の角度が増加。
+        // ご要望: 0kPaを真下、1000kPaを右真横、回転方向は時計回り
+        const START_ANGLE_DEGREE = 90; // 0kPaの開始位置 (真下)
+        const END_ANGLE_DEGREE = 360;   // 1000kPaの終了位置 (右真横を360度として利用)
+        
+        // 時計回りの回転量を計算: 終了角度から開始角度を引く（角度が増加するため）
+        const TOTAL_ANGLE_RANGE_DEGREE = END_ANGLE_DEGREE - START_ANGLE_DEGREE; // 360 - 90 = 270度
 
         // Canvas描画用の定数
         const CANVAS_WIDTH = 250;
@@ -127,13 +125,12 @@
         const BORDER_WIDTH = 5; // メーターのボーダー幅
         const NEEDLE_LENGTH = 95; // 針の長さ
         const CENTER_DOT_RADIUS = 6; // 中心の点の半径
-        const NUMBER_LABEL_OFFSET = 18; // 数字がメーター外周から離れる距離
+        const NUMBER_LABEL_OFFSET = 25; // 数字がメーター外周から離れる距離
 
         document.addEventListener('DOMContentLoaded', () => {
             pressureMeterCanvas = document.getElementById('pressureMeterCanvas');
             pressureMeterCtx = pressureMeterCanvas.getContext('2d');
 
-            // Canvasの描画サイズを要素のwidth/height属性に設定
             pressureMeterCanvas.width = CANVAS_WIDTH;
             pressureMeterCanvas.height = CANVAS_HEIGHT;
 
@@ -143,10 +140,22 @@
             document.getElementById('connectButton').onclick = connectDevice;
         });
 
+        // 値に応じた角度を計算するヘルパー関数
+        function calculateMeterAngle(value) {
+            const normalizedValue = (value - PRESS_MIN_VALUE) / (PRESS_MAX_VALUE - PRESS_MIN_VALUE);
+            // 時計回りの角度計算: 開始角度に正規化された値に応じた回転量を加算
+            let angleDegree = START_ANGLE_DEGREE + (normalizedValue * TOTAL_ANGLE_RANGE_DEGREE);
+            
+            // 角度を0～359の範囲に正規化 (Canvasの描画用)
+            // 例: 360度は0度になる
+            return angleDegree % 360;
+        }
+
         // メーターの静的な部分（背景、目盛り、数値）を描画する関数
         function drawStaticMeterElements() {
             // 背景の円
             pressureMeterCtx.beginPath();
+            // Canvasのarc関数は「時計回りに正」の角度なので、計算した角度をそのまま使用
             pressureMeterCtx.arc(CENTER_X, CENTER_Y, METER_RADIUS, 0, 2 * Math.PI);
             pressureMeterCtx.fillStyle = '#333'; // 背景色
             pressureMeterCtx.fill();
@@ -157,40 +166,50 @@
             // 目盛りと数値
             pressureMeterCtx.font = 'bold 16px Arial';
             pressureMeterCtx.fillStyle = '#ff0000';
-            pressureMeterCtx.textAlign = 'center';
-            pressureMeterCtx.textBaseline = 'middle';
-
-            for (let i = 0; i <= 1000; i += 100) {
-                const normalizedValue = i / PRESS_MAX_VALUE;
-                // 時計回りの角度計算: 開始角度から正規化された値に応じた回転量を減算
-                let angleDegree = START_ANGLE_DEGREE - (normalizedValue * TOTAL_ANGLE_RANGE_DEGREE);
-                
-                // 角度を0～359の範囲に正規化
-                // 例えば、270 - 270 = 0度
-                // 270 - 0 = 270度
-                angleDegree = (angleDegree % 360 + 360) % 360;
-
+            
+            // ループを50刻みに変更
+            for (let i = 0; i <= 1000; i += 50) {
+                const angleDegree = calculateMeterAngle(i); // ヘルパー関数を使用
+                // CanvasのMath.cos/sinは「時計回りに正」の角度なので、計算した角度をそのままラジアンに変換
                 const angleRad = angleDegree * Math.PI / 180; // 度をラジアンに変換
 
                 // 目盛り線
                 const tickLength = 8;
-                // ボーダーの内側から目盛りを開始するように調整
                 const tickInnerX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2 - tickLength) * Math.cos(angleRad);
                 const tickInnerY = CENTER_Y + (METER_RADIUS - BORDER_WIDTH / 2 - tickLength) * Math.sin(angleRad);
-                const tickOuterX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2) * Math.cos(angleRad); // ボーダーの内側終点
+                const tickOuterX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2) * Math.cos(angleRad);
                 const tickOuterY = CENTER_Y + (METER_RADIUS - BORDER_WIDTH / 2) * Math.sin(angleRad);
 
                 pressureMeterCtx.beginPath();
                 pressureMeterCtx.moveTo(tickInnerX, tickInnerY);
                 pressureMeterCtx.lineTo(tickOuterX, tickOuterY);
                 pressureMeterCtx.strokeStyle = '#ff0000';
-                pressureMeterCtx.lineWidth = (i % 200 === 0) ? 3 : 1; // 200単位で太い目盛り
+                // 100単位の目盛りを太く、それ以外（50単位）は細く
+                pressureMeterCtx.lineWidth = (i % 100 === 0) ? 3 : 1;
                 pressureMeterCtx.stroke();
 
-                // 数値
-                const numberX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2 - NUMBER_LABEL_OFFSET) * Math.cos(angleRad);
-                const numberY = CENTER_Y + (METER_RADIUS - BORDER_WIDTH / 2 - NUMBER_LABEL_OFFSET) * Math.sin(angleRad);
-                pressureMeterCtx.fillText(i, numberX, numberY);
+                // 100単位の目盛りのみ数字を描画
+                if (i % 100 === 0) {
+                    const numberX = CENTER_X + (METER_RADIUS - BORDER_WIDTH / 2 - NUMBER_LABEL_OFFSET) * Math.cos(angleRad);
+                    const numberY = CENTER_Y + (METER_RADIUS - BORDER_WIDTH / 2 - NUMBER_LABEL_OFFSET) * Math.sin(angleRad);
+                    
+                    // テキストの回転 (数値が常にメーターの中心を向くように)
+                    pressureMeterCtx.save(); // 現在のCanvas状態を保存
+                    pressureMeterCtx.translate(numberX, numberY); // 数値の位置に原点を移動
+                    
+                    // テキストの回転角度を調整
+                    let textRotationAngle = angleDegree; 
+                    if (angleDegree > 90 && angleDegree < 270) {
+                        textRotationAngle += 180; 
+                    }
+                    
+                    pressureMeterCtx.rotate(textRotationAngle * Math.PI / 180); 
+                    
+                    pressureMeterCtx.textAlign = 'center';
+                    pressureMeterCtx.textBaseline = 'middle';
+                    pressureMeterCtx.fillText(i, 0, 0); // 原点(0,0)にテキストを描画
+                    pressureMeterCtx.restore(); // 保存したCanvas状態に戻す
+                }
             }
 
             // 中心の点 (針の下に隠れるように最後に描画)
@@ -202,15 +221,11 @@
 
         // 針のみを更新する関数
         function updatePressureNeedle(value) {
-            const normalizedValue = (value - PRESS_MIN_VALUE) / (PRESS_MAX_VALUE - PRESS_MIN_VALUE);
-            // 時計回りの角度計算: 開始角度から正規化された値に応じた回転量を減算
-            let targetAngleDegree = START_ANGLE_DEGREE - (normalizedValue * TOTAL_ANGLE_RANGE_DEGREE);
-            targetAngleDegree = (targetAngleDegree % 360 + 360) % 360; // 0～359の範囲に正規化
-
+            const targetAngleDegree = calculateMeterAngle(value); // ヘルパー関数を使用
+            // CanvasのMath.cos/sinは「時計回りに正」の角度なので、計算した角度をそのままラジアンに変換
             const targetAngleRad = targetAngleDegree * Math.PI / 180; // 度をラジアンに変換
 
             // 針の描画領域をクリア
-            // メーター全体の範囲をクリアして静的要素を再描画する方式を維持
             const clearRadius = METER_RADIUS + BORDER_WIDTH; // メーター全体の範囲をクリア
             pressureMeterCtx.clearRect(
                 CENTER_X - clearRadius,
